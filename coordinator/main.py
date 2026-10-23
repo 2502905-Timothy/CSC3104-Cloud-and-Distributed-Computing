@@ -1,9 +1,10 @@
 
-"""FastAPI coordinator for TrustFed (development stage)."""
+"""TrustFed Role 3 coordinator; single-process SQLite-backed prototype."""
 
-import asyncio
-import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+import os
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -22,7 +23,11 @@ class ClientRegistration(BaseModel):
 
 
 class StartRoundRequest(BaseModel):
-    deadline_seconds: int = Field(default=30, ge=1, le=3600)
+    deadline_seconds: int = Field(
+        default=30,
+        ge=1,
+        le=3600,
+    )
 
 
 class ModelUpdateRequest(BaseModel):
@@ -40,21 +45,31 @@ class ModelUpdateRequest(BaseModel):
     )
 
 
-# Temporary in-memory state. Single-process use only.
-registered_clients: set[str] = set()
-clients_lock = asyncio.Lock()
-round_manager = RoundManager()
+# Store coordinator state outside the Git repository.
+DB_PATH = os.getenv(
+    "TRUSTFED_DB_PATH",
+    str(
+        Path.home()
+        / ".trustfed"
+        / "coordinator.sqlite3"
+    ),
+)
 
-# Mock aggregation is for local coordinator testing only.
+round_manager = RoundManager(
+    db_path=DB_PATH
+)
+
+# Mock aggregation is for development testing only.
 if os.getenv("TRUSTFED_MOCK_AGGREGATION") == "1":
-    rejection_list = os.getenv(
+    names = os.getenv(
         "TRUSTFED_MOCK_REJECT_CLIENTS", ""
     )
+
     aggregator = MockAggregationAdapter(
         rejected_clients=[
-            item.strip()
-            for item in rejection_list.split(",")
-            if item.strip()
+            x.strip()
+            for x in names.split(",")
+            if x.strip()
         ]
     )
 else:
@@ -68,13 +83,41 @@ deadline_worker = DeadlineWorker(
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    yield
-    await deadline_worker.stop()
+    # Restore the deadline timer when the server starts.
+    info = await round_manager.current()
+
+    if (
+        info is not None
+        and info["status"] in {
+            "collecting",
+            "deadline_reached",
+            "awaiting_validation",
+        }
+    ):
+        remaining = max(
+            0.0,
+            (
+                datetime.fromisoformat(
+                    info["deadline_at"]
+                )
+                - datetime.now(timezone.utc)
+            ).total_seconds(),
+        )
+
+        deadline_worker.schedule(
+            info["round_id"],
+            remaining,
+        )
+
+    try:
+        yield
+    finally:
+        await deadline_worker.stop()
 
 
 app = FastAPI(
     title="TrustFed Coordinator",
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
@@ -90,30 +133,20 @@ async def health():
 
 @app.post("/clients/register", status_code=201)
 async def register_client(request: ClientRegistration):
-    async with clients_lock:
-        if request.client_id in registered_clients:
-            raise HTTPException(
-                status_code=409,
-                detail="Client already registered",
-            )
-
-        registered_clients.add(request.client_id)
-
-    return {
-        "client_id": request.client_id,
-        "status": "registered",
-    }
+    try:
+        return await round_manager.register(
+            request.client_id
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
 
 
 @app.get("/clients")
 async def list_clients():
-    async with clients_lock:
-        ids = sorted(registered_clients)
-
-    return {
-        "clients": ids,
-        "count": len(ids),
-    }
+    return await round_manager.clients()
 
 
 @app.get("/model/current")
@@ -123,16 +156,11 @@ async def current_model():
 
 @app.post("/rounds/start", status_code=201)
 async def start_round(request: StartRoundRequest):
-    async with clients_lock:
-        participants = set(registered_clients)
-
     try:
         info = await round_manager.start(
-            request.deadline_seconds,
-            participants,
+            request.deadline_seconds
         )
 
-        # Arrange automatic processing at the deadline.
         deadline_worker.schedule(
             info["round_id"],
             request.deadline_seconds,
@@ -180,7 +208,7 @@ async def submit_update(request: ModelUpdateRequest):
 
 @app.post("/rounds/close")
 async def close_round():
-    # Manual development control, retained for testing.
+    # Development-only administrative endpoint.
     try:
         return await round_manager.close()
 
@@ -193,18 +221,17 @@ async def close_round():
 
 @app.post("/rounds/finalize")
 async def finalize_round():
-    # Manual development control, retained for testing.
+    # Development-only administrative endpoint.
     if aggregator is None:
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Aggregation unavailable: configure Role 1 "
-                "adapter or opt into mock mode"
-            ),
+            detail="Aggregation adapter unavailable",
         )
 
     try:
-        return await round_manager.finalize(aggregator)
+        return await round_manager.finalize(
+            aggregator
+        )
 
     except ValueError as exc:
         raise HTTPException(

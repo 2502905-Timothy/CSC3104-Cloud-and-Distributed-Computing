@@ -1,12 +1,11 @@
 
-"""Automatic deadline processing for the TrustFed coordinator.
+"""Deadline processing within a single coordinator process.
 
-This worker operates inside one Python process.
-It does not provide restart-safe scheduling or
-coordination across multiple server replicas.
+After a restart, main.py re-schedules the saved round using its UTC deadline.
 """
 
 import asyncio
+from datetime import datetime, timezone
 import logging
 
 from coordinator.round_manager import (
@@ -30,49 +29,57 @@ class DeadlineWorker:
     def schedule(
         self,
         round_id: int,
-        deadline_seconds: int,
+        delay_seconds: float,
     ):
-        """Schedule automatic processing for a round."""
-
         task = asyncio.create_task(
-            self._run(round_id, deadline_seconds)
+            self._run(round_id, delay_seconds)
         )
-
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
     async def _run(
         self,
         round_id: int,
-        deadline_seconds: int,
+        delay_seconds: float,
     ):
         try:
-            # Wait without blocking other client requests.
-            await asyncio.sleep(deadline_seconds)
+            await asyncio.sleep(
+                max(0, delay_seconds)
+            )
 
-            info = await self._manager.current()
+            while True:
+                info = await self._manager.current()
 
-            # The round may already have been replaced.
-            if (
-                info is None
-                or info["round_id"] != round_id
-            ):
-                return
+                if (
+                    info is None
+                    or info["round_id"] != round_id
+                ):
+                    return
 
-            # Close collection if the round is still open.
-            if info["status"] in {
-                "collecting",
-                "deadline_reached",
-            }:
+                if info["status"] != "collecting":
+                    break
+
+                # Handle timers waking slightly before the deadline.
+                remaining = (
+                    datetime.fromisoformat(
+                        info["deadline_at"]
+                    )
+                    - datetime.now(timezone.utc)
+                ).total_seconds()
+
+                await asyncio.sleep(
+                    max(0.001, remaining)
+                )
+
+            if info["status"] == "deadline_reached":
                 try:
                     await self._manager.close()
                 except ValueError:
-                    # Another request may have closed it.
+                    # Another request may have closed the round.
                     pass
 
             info = await self._manager.current()
 
-            # Validate and aggregate only if appropriate.
             if (
                 info is not None
                 and info["round_id"] == round_id
@@ -85,16 +92,12 @@ class DeadlineWorker:
                     )
 
                 except ValueError:
-                    # Another request may have started
-                    # finalisation already.
+                    # Another caller began finalisation.
                     pass
 
                 except AggregationFailure:
-                    # The previous model remains unchanged.
-                    # A manual retry can be attempted.
                     logger.exception(
-                        "Automatic aggregation failed "
-                        "for round %s",
+                        "Aggregation failed for round %s",
                         round_id,
                     )
 
@@ -103,14 +106,11 @@ class DeadlineWorker:
 
         except Exception:
             logger.exception(
-                "Automatic deadline handling failed "
-                "for round %s",
+                "Deadline processing failed for round %s",
                 round_id,
             )
 
     async def stop(self):
-        """Cancel pending tasks during server shutdown."""
-
         pending = list(self._tasks)
 
         for task in pending:
