@@ -3,9 +3,6 @@
 
 Trust-Aware Federated Learning for Decentralised Scam Message Detection
 
-CSC3104 – Cloud and Distributed Computing  
-Group 13 | Singapore Institute of Technology
-
 ## Project Overview
 
 TrustFed investigates whether trust-aware aggregation can improve
