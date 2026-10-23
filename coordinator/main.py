@@ -1,6 +1,7 @@
 
 import asyncio
 
+from coordinator.round_manager import RoundManager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
@@ -21,6 +22,7 @@ class ClientRegistration(BaseModel):
 # Temporary storage for registered clients
 registered_clients: set[str] = set()
 clients_lock = asyncio.Lock()
+round_manager = RoundManager()
 
 
 @app.get("/health")
@@ -57,3 +59,36 @@ async def list_clients():
         "clients": ids,
         "count": len(ids)
     }
+
+
+class StartRoundRequest(BaseModel):
+    deadline_seconds: int = Field(
+        default=30,
+        ge=1,
+        le=3600
+    )
+
+
+@app.post("/rounds/start", status_code=201)
+async def start_round(request: StartRoundRequest):
+    try:
+        return await round_manager.start(
+            request.deadline_seconds
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc)
+        ) from exc
+
+@app.get("/rounds/current")
+async def current_round():
+    result = await round_manager.current()
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No training round exists"
+        )
+
+    return result
