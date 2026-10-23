@@ -69,17 +69,23 @@ class StartRoundRequest(BaseModel):
     )
 
 
+
 @app.post("/rounds/start", status_code=201)
 async def start_round(request: StartRoundRequest):
+    async with clients_lock:
+        participants = set(registered_clients)
+
     try:
         return await round_manager.start(
-            request.deadline_seconds
+            request.deadline_seconds,
+            participants
         )
     except ValueError as exc:
         raise HTTPException(
             status_code=409,
             detail=str(exc)
         ) from exc
+
 
 @app.get("/rounds/current")
 async def current_round():
@@ -92,3 +98,35 @@ async def current_round():
         )
 
     return result
+
+
+class ModelUpdateRequest(BaseModel):
+    client_id: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$"
+    )
+    round_id: int = Field(ge=1)
+    model_version: int = Field(ge=0)
+    sample_count: int = Field(ge=1)
+    parameters: list[float] = Field(
+        min_length=1,
+        max_length=20000
+    )
+
+
+@app.post("/updates", status_code=202)
+async def submit_update(request: ModelUpdateRequest):
+    try:
+        return await round_manager.submit(
+            client_id=request.client_id,
+            round_id=request.round_id,
+            model_version=request.model_version,
+            sample_count=request.sample_count,
+            parameters=request.parameters
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc)
+        ) from exc
