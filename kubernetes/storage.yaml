@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: trustfed-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  # We remove 'storageClassName' so it uses the default (hostpath) dynamically!
+  # no longer need to create a folder locally to store data

@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coordinator
+  labels:
+    app: coordinator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coordinator
+  template:
+    metadata:
+      labels:
+        app: coordinator
+    spec:
+      containers:
+      - name: coordinator
+        image: localhost/trustfed-coordinator:v1
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        - name: TRUSTFED_DB_PATH
+          # This must match where you mount the volume below
+          value: "/app/data/coordinator.sqlite3" 
+        
+        # 1. Mount the volume inside the container
+        volumeMounts:
+        - name: trustfed-storage
+          mountPath: "/app/data"
+          
+      # 2. Tell K8s to use the PVC we created in storage.yaml
+      volumes:
+      - name: trustfed-storage
+        persistentVolumeClaim:
+          claimName: trustfed-pvc
