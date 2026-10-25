@@ -1,5 +1,8 @@
-
 """TrustFed coordinator with selectable aggregation mode."""
+
+import csv
+
+from coordinator.aggregation import TrustFedAdapter
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -72,7 +75,33 @@ AGGREGATION_MODE = os.getenv(
     "none",
 ).lower()
 
-if AGGREGATION_MODE == "fedavg":
+if AGGREGATION_MODE == "trustfed":
+    validation_path = Path(
+        os.getenv(
+            "TRUSTFED_VALIDATION_PATH",
+            "data/validation_messages.csv",
+        )
+    )
+
+    with validation_path.open(
+        newline="",
+        encoding="utf-8-sig",
+    ) as file:
+        rows = list(csv.DictReader(file))
+
+    if not rows:
+        raise ValueError("TrustFed validation dataset is empty")
+
+    text_column = (
+        "message" if "message" in rows[0] else "text"
+    )
+
+    aggregator = TrustFedAdapter(
+        validation_texts=[row[text_column] for row in rows],
+        validation_labels=[int(row["label"]) for row in rows],
+    )
+
+elif AGGREGATION_MODE == "fedavg":
     aggregator = FedAvgAdapter()
 
 elif AGGREGATION_MODE == "mock" or (
@@ -172,7 +201,9 @@ async def health():
             MockAggregationAdapter,
         ),
         "aggregation_mode": (
-            "fedavg"
+            "trustfed"
+            if isinstance(aggregator, TrustFedAdapter)
+            else "fedavg"
             if isinstance(aggregator, FedAvgAdapter)
             else (
                 "mock"
