@@ -24,8 +24,8 @@ and client failures.
 - [x] Python development environment
 - [x] Centralised TF-IDF + SGDClassifier baseline
 - [x] Synthetic dataset for initial testing
-- [ ] Federated client training
-- [ ] FedAvg aggregation
+- [x] Federated client training
+- [x] FedAvg aggregation
 - [ ] Trust-aware aggregation
 - [ ] Distributed coordinator
 - [ ] Docker deployment
