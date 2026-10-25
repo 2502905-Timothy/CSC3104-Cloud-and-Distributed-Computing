@@ -22,15 +22,19 @@ spec:
         - containerPort: 8000
         env:
         - name: TRUSTFED_DB_PATH
-          # This must match where you mount the volume below
           value: "/app/data/coordinator.sqlite3" 
-        
-        # 1. Mount the volume inside the container
+        - name: TRUSTFED_AGGREGATOR
+          value: "fedavg"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
         volumeMounts:
         - name: trustfed-storage
           mountPath: "/app/data"
-          
-      # 2. Tell K8s to use the PVC we created in storage.yaml
       volumes:
       - name: trustfed-storage
         persistentVolumeClaim:
