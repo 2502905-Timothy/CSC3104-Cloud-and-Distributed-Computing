@@ -1,5 +1,5 @@
 
-"""TrustFed Role 3 coordinator; single-process SQLite-backed prototype."""
+"""TrustFed coordinator with selectable aggregation mode."""
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -11,7 +11,9 @@ from pydantic import BaseModel, Field
 
 from coordinator.aggregation_adapter import MockAggregationAdapter
 from coordinator.deadline_worker import DeadlineWorker
+from coordinator.fedavg_adapter import FedAvgAdapter
 from coordinator.round_manager import AggregationFailure, RoundManager
+from shared.fed_params import N_PARAMS, initial_parameters
 
 
 class ClientRegistration(BaseModel):
@@ -45,7 +47,7 @@ class ModelUpdateRequest(BaseModel):
     )
 
 
-# Store coordinator state outside the Git repository.
+# SQLite database location.
 DB_PATH = os.getenv(
     "TRUSTFED_DB_PATH",
     str(
@@ -55,25 +57,49 @@ DB_PATH = os.getenv(
     ),
 )
 
+# Use the real federated model parameter format:
+# 4096 feature weights plus one intercept.
 round_manager = RoundManager(
-    db_path=DB_PATH
+    initial_parameters=initial_parameters(),
+    db_path=DB_PATH,
 )
 
-# Mock aggregation is for development testing only.
-if os.getenv("TRUSTFED_MOCK_AGGREGATION") == "1":
+
+# Aggregator selection.
+# FedAvg is the baseline, not the trust-aware algorithm.
+AGGREGATION_MODE = os.getenv(
+    "TRUSTFED_AGGREGATOR",
+    "none",
+).lower()
+
+if AGGREGATION_MODE == "fedavg":
+    aggregator = FedAvgAdapter()
+
+elif AGGREGATION_MODE == "mock" or (
+    AGGREGATION_MODE == "none"
+    and os.getenv("TRUSTFED_MOCK_AGGREGATION") == "1"
+):
     names = os.getenv(
-        "TRUSTFED_MOCK_REJECT_CLIENTS", ""
+        "TRUSTFED_MOCK_REJECT_CLIENTS",
+        "",
     )
 
     aggregator = MockAggregationAdapter(
         rejected_clients=[
-            x.strip()
-            for x in names.split(",")
-            if x.strip()
+            name.strip()
+            for name in names.split(",")
+            if name.strip()
         ]
     )
-else:
+
+elif AGGREGATION_MODE == "none":
     aggregator = None
+
+else:
+    raise ValueError(
+        f"Unsupported TRUSTFED_AGGREGATOR: {AGGREGATION_MODE}"
+    )
+
 
 deadline_worker = DeadlineWorker(
     round_manager,
@@ -83,7 +109,20 @@ deadline_worker = DeadlineWorker(
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Restore the deadline timer when the server starts.
+    # An old database may contain our earlier
+    # three-parameter dummy model. Refuse to
+    # silently reuse it with the real client model.
+    saved_model = await round_manager.model()
+
+    if len(saved_model["parameters"]) != N_PARAMS:
+        raise RuntimeError(
+            f"Saved model contains "
+            f"{len(saved_model['parameters'])} parameters; "
+            f"clients require {N_PARAMS}. "
+            "Use a fresh TRUSTFED_DB_PATH for integration."
+        )
+
+    # Recover an unfinished round after a restart.
     info = await round_manager.current()
 
     if (
@@ -111,13 +150,14 @@ async def lifespan(_app: FastAPI):
 
     try:
         yield
+
     finally:
         await deadline_worker.stop()
 
 
 app = FastAPI(
     title="TrustFed Coordinator",
-    version="0.4.0",
+    version="0.5.0",
     lifespan=lifespan,
 )
 
@@ -127,7 +167,19 @@ async def health():
     return {
         "status": "ok",
         "service": "coordinator",
-        "mock_aggregation": aggregator is not None,
+        "mock_aggregation": isinstance(
+            aggregator,
+            MockAggregationAdapter,
+        ),
+        "aggregation_mode": (
+            "fedavg"
+            if isinstance(aggregator, FedAvgAdapter)
+            else (
+                "mock"
+                if isinstance(aggregator, MockAggregationAdapter)
+                else "none"
+            )
+        ),
     }
 
 
@@ -137,6 +189,7 @@ async def register_client(request: ClientRegistration):
         return await round_manager.register(
             request.client_id
         )
+
     except ValueError as exc:
         raise HTTPException(
             status_code=409,
