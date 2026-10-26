@@ -79,7 +79,7 @@ if AGGREGATION_MODE == "trustfed":
     validation_path = Path(
         os.getenv(
             "TRUSTFED_VALIDATION_PATH",
-            "data/validation_messages.csv",
+            "data/coordinator_val_set.csv",
         )
     )
 
