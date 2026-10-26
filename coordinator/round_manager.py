@@ -1,4 +1,3 @@
-
 """TrustFed round manager with optional atomic local SQLite persistence.
 
 Run only one coordinator process against a SQLite database file.
@@ -54,6 +53,7 @@ class RoundManager:
                 "next_round_id": 1,
                 "model_version": 0,
                 "model_parameters": parameters,
+                "trust_scores": {},
                 "current": None,
                 "participants": [],
                 "updates": {},
@@ -63,8 +63,9 @@ class RoundManager:
                 self._store.save(self._state)
 
         else:
-            # Restore the previous model and round information.
+            # Restore the previous model, round information and trust history.
             self._state = saved
+            self._state.setdefault("trust_scores", {})
 
             if self._state["current"] is not None:
                 if self._state["current"]["status"] == "aggregating":
@@ -426,8 +427,15 @@ class RoundManager:
                 self._state["model_parameters"]
             )
             updates = deepcopy(self._state["updates"])
+            committed_trust = dict(
+                self._state.get("trust_scores", {})
+            )
 
         try:
+            # TrustFed must calculate from the last committed trust history.
+            # FedAvg and mock adapters do not use this attribute.
+            if hasattr(aggregator, "trust_scores"):
+                aggregator.trust_scores = dict(committed_trust)
             # Run aggregation without holding the coordinator lock.
             result = await aggregator.aggregate(
                 round_id=round_id,
@@ -510,6 +518,12 @@ class RoundManager:
                     result.parameters
                 )
                 proposed["model_version"] += 1
+
+                if result.trust_scores is not None:
+                    proposed["trust_scores"] = dict(
+                        result.trust_scores
+                    )
+
                 proposed["current"]["status"] = "completed"
 
             self._commit(proposed)

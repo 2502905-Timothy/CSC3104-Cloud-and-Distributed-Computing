@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: trustfed-clients
+spec:
+  serviceName: "trustfed-clients-headless"
+  replicas: 3
+  selector:
+    matchLabels:
+      app: client
+  template:
+    metadata:
+      labels:
+        app: client
+    spec:
+      containers:
+      - name: client
+        image: localhost/trustfed-client:v1
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            POD_INDEX=${HOSTNAME##*-}
+            echo "Starting Client $POD_INDEX"
+            python -m client.client \
+              --client-id "client-$POD_INDEX" \
+              --data "/app/data/client_$POD_INDEX.csv" \
+              --coordinator "http://trustfed-coordinator:8000" \
+              --max-rounds 10 \
+              --poll 2
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trustfed-clients-headless
+spec:
+  clusterIP: None
+  selector:
+    app: client
+  ports:
+    - port: 80
+      targetPort: 80
