@@ -79,7 +79,7 @@ if AGGREGATION_MODE == "trustfed":
     validation_path = Path(
         os.getenv(
             "TRUSTFED_VALIDATION_PATH",
-            "data/validation_messages.csv",
+            "data/coordinator_val_set.csv",
         )
     )
 
@@ -236,6 +236,12 @@ async def list_clients():
 @app.get("/model/current")
 async def current_model():
     return await round_manager.model()
+
+
+@app.get("/model/trust-scores")
+async def current_trust_scores():
+    # The GUI must not access the Pod's internal SQLite file.
+    return await round_manager.trust_scores()
 
 
 @app.post("/rounds/start", status_code=201)
