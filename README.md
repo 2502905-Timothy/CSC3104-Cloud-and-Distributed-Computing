@@ -62,4 +62,21 @@ kubectl apply -f kubernetes/
 
 # Access Coordinator API
 kubectl port-forward svc/trustfed-coordinator 8000:8000
-navigate to http://localhost:8000/docs
+navigate to http://localhost:8000/
+```
+
+The coordinator serves the TrustFed dashboard at `http://localhost:8000/`.
+The original FastAPI documentation remains available at
+`http://localhost:8000/docs`.
+
+For local development, start the coordinator as usual:
+
+```powershell
+python -m uvicorn coordinator.main:app --reload --port 8000
+```
+
+The downloaded GUI is also available as a standalone application when you
+need a separate client window:
+
+```powershell
+python -m visualization.app client --port 8501 --coordinator-url http://127.0.0.1:8000

@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY coordinator/ ./coordinator/
 COPY client/ ./client/
 COPY shared/ ./shared/
+COPY visualization/ ./visualization/
 COPY data/ ./data/
 
 # 4. Expose the port for FastAPI

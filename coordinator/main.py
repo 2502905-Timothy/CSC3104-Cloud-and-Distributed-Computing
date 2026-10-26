@@ -17,6 +17,7 @@ from coordinator.deadline_worker import DeadlineWorker
 from coordinator.fedavg_adapter import FedAvgAdapter
 from coordinator.round_manager import AggregationFailure, RoundManager
 from shared.fed_params import N_PARAMS, initial_parameters
+from visualization.app import build_app
 
 
 class ClientRegistration(BaseModel):
@@ -328,3 +329,19 @@ async def finalize_round():
             status_code=502,
             detail=str(exc),
         ) from exc
+
+
+# Serve the dashboard from the same origin as the coordinator API. The GUI
+# remains a separate sub-application so the coordinator routes above are
+# unchanged.
+app.mount(
+    "/",
+    build_app(
+        "coordinator",
+        os.getenv(
+            "TRUSTFED_GUI_COORDINATOR_URL",
+            "http://127.0.0.1:8000",
+        ),
+        DB_PATH,
+    ),
+)
