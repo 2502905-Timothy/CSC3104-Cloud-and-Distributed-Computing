@@ -9,6 +9,7 @@ class AggregationResult:
     accepted_clients: list[str]
     rejected_clients: list[str]
     parameters: list[float] | None
+    trust_scores: dict[str, float] | None = None
 
 
 class AggregationAdapter(Protocol):
