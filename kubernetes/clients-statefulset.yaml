@@ -4,7 +4,7 @@ metadata:
   name: trustfed-clients
 spec:
   serviceName: "trustfed-clients-headless"
-  replicas: 3
+  replicas: 5
   selector:
     matchLabels:
       app: client
@@ -21,10 +21,11 @@ spec:
         args:
           - |
             POD_INDEX=${HOSTNAME##*-}
-            echo "Starting Client $POD_INDEX"
+            FILE_INDEX=$((POD_INDEX + 1))
+            echo "Starting Client $POD_INDEX (Using data file client_${FILE_INDEX}_train.csv)"
             python -m client.client \
-              --client-id "client-$POD_INDEX" \
-              --data "/app/data/client_$POD_INDEX.csv" \
+              --client-id "client-$FILE_INDEX" \
+              --data "/app/data/client_${FILE_INDEX}_train.csv" \
               --coordinator "http://trustfed-coordinator:8000" \
               --max-rounds 10 \
               --poll 2

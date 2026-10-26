@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: coordinator
-        image: localhost/trustfed-coordinator:v1
+        image: localhost/trustfed-coordinator:v2
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
