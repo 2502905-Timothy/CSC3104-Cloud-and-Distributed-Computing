@@ -16,15 +16,17 @@ spec:
     spec:
       containers:
       - name: coordinator
-        image: localhost/trustfed-coordinator:v2
+        image: localhost/trustfed-coordinator:v3
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
         env:
         - name: TRUSTFED_DB_PATH
-          value: "/app/data/coordinator.sqlite3" 
+          value: "/app/state/coordinator.sqlite3"
         - name: TRUSTFED_AGGREGATOR
-          value: "fedavg"
+          value: "trustfed"
+        - name: TRUSTFED_VALIDATION_PATH
+          value: "/app/data/coordinator_val_set.csv"
         resources:
           requests:
             memory: "256Mi"
@@ -34,7 +36,7 @@ spec:
             cpu: "500m"
         volumeMounts:
         - name: trustfed-storage
-          mountPath: "/app/data"
+          mountPath: "/app/state"
       volumes:
       - name: trustfed-storage
         persistentVolumeClaim:

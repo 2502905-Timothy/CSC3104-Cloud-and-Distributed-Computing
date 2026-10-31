@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TrustFed Command Center</title>
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --panel-bg: #1e293b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-blue: #3b82f6;
+      --accent-green: #10b981;
+      --accent-red: #ef4444;
+      --accent-orange: #f59e0b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Header */
+    header {
+      background: #020617;
+      padding: 15px 30px;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      z-index: 10;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    header h1 span {
+      color: var(--accent-blue);
+    }
+
+    /* Main Layout */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      max-width: 1000px;
+      margin: 0 auto;
+      width: 100%;
+      gap: 20px;
+    }
+
+    /* Coordinator Hub */
+    .coordinator-hub {
+      background: var(--panel-bg);
+      border: 2px solid #334155;
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      position: relative;
+      z-index: 2;
+      box-shadow: 0 0 30px rgba(59, 130, 246, 0.1);
+    }
+
+    .coordinator-sprite {
+      font-size: 50px;
+      margin-bottom: 10px;
+      display: inline-block;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    .coordinator-stats {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      margin-top: 15px;
+    }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .stat-value {
+      font-size: 20px;
+      font-weight: bold;
+      margin-top: 5px;
+      color: var(--accent-blue);
+    }
+
+    /* Network Grid (Containers) */
+    .network-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 15px;
+      position: relative;
+      margin-top: 30px;
+    }
+
+    .network-grid::before {
+      content: '';
+      position: absolute;
+      top: -30px;
+      left: 50%;
+      width: 2px;
+      height: 30px;
+      background: #334155;
+      z-index: 0;
+    }
+
+    /* Client Container */
+    .client-node {
+      background: #1e293b;
+      border: 2px solid #334155;
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+      position: relative;
+      z-index: 2;
+      transition: all 0.3s ease;
+      overflow: hidden;
+    }
+
+    .sprite {
+      font-size: 40px;
+      display: inline-block;
+      transition: transform 0.3s;
+    }
+
+    .client-name {
+      font-size: 14px;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+
+    .client-status-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      height: 16px;
+    }
+
+    /* Trust Bar */
+    .trust-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: #0f172a;
+      border-radius: 3px;
+      margin-top: 15px;
+      overflow: hidden;
+    }
+
+    .trust-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent-blue);
+      transition: width 1s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.5s;
+    }
+
+    /* Dynamic Trust Colors */
+    .trust-bar-fill.trust-high {
+      background: var(--accent-green);
+    }
+
+    .trust-bar-fill.trust-mid {
+      background: var(--accent-blue);
+    }
+
+    .trust-bar-fill.trust-low {
+      background: var(--accent-orange);
+    }
+
+    .trust-bar-fill.trust-bad {
+      background: var(--accent-red);
+    }
+
+    /* Animations & States */
+    @keyframes float {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-10px);
+      }
+    }
+
+    @keyframes train-shake {
+      0% {
+        transform: translate(1px, 1px) rotate(0deg);
+      }
+
+      10% {
+        transform: translate(-1px, -2px) rotate(-1deg);
+      }
+
+      20% {
+        transform: translate(-3px, 0px) rotate(1deg);
+      }
+
+      30% {
+        transform: translate(3px, 2px) rotate(0deg);
+      }
+
+      40% {
+        transform: translate(1px, -1px) rotate(1deg);
+      }
+
+      50% {
+        transform: translate(-1px, 2px) rotate(-1deg);
+      }
+
+      60% {
+        transform: translate(-3px, 1px) rotate(0deg);
+      }
+
+      70% {
+        transform: translate(3px, 1px) rotate(-1deg);
+      }
+
+      80% {
+        transform: translate(-1px, -1px) rotate(1deg);
+      }
+
+      90% {
+        transform: translate(1px, 2px) rotate(0deg);
+      }
+
+      100% {
+        transform: translate(1px, -2px) rotate(-1deg);
+      }
+    }
+
+    @keyframes error-pulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+      }
+
+      70% {
+        box-shadow: 0 0 0 15px rgba(239, 68, 68, 0);
+      }
+
+      100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+      }
+    }
+
+    .client-node.training {
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+    }
+
+    .client-node.training .sprite {
+      animation: train-shake 0.2s infinite;
+    }
+
+    .client-node.submitting {
+      border-color: var(--accent-orange);
+      box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+    }
+
+    .data-packet {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      background: var(--accent-orange);
+      border-radius: 50%;
+      top: 50%;
+      left: 50%;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .client-node.submitting .data-packet {
+      animation: send-up 1s infinite linear;
+    }
+
+    @keyframes send-up {
+      0% {
+        transform: translate(-50%, -50%);
+        opacity: 1;
+      }
+
+      100% {
+        transform: translate(-50%, -300px);
+        opacity: 0;
+      }
+    }
+
+    .client-node.accepted {
+      border-color: var(--accent-green);
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+    }
+
+    .client-node.accepted .sprite {
+      transform: scale(1.1);
+    }
+
+    .client-node.rejected {
+      border-color: var(--accent-red);
+      animation: error-pulse 1.5s infinite;
+    }
+
+    .client-node.rejected .sprite {
+      transform: scale(0.9) rotate(-10deg);
+      filter: grayscale(1);
+    }
+
+    /* Event Log Terminal */
+    .terminal {
+      background: #000;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 15px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      height: 150px;
+      overflow-y: auto;
+      box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8);
+    }
+
+    .log-entry {
+      margin-bottom: 5px;
+    }
+
+    .log-time {
+      color: #64748b;
+    }
+
+    .log-sys {
+      color: var(--accent-blue);
+    }
+
+    .log-success {
+      color: var(--accent-green);
+    }
+
+    .log-error {
+      color: var(--accent-red);
+    }
+
+    .log-warn {
+      color: var(--accent-orange);
+    }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      background: var(--panel-bg);
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+    }
+
+    input[type="number"] {
+      background: #0f172a;
+      color: white;
+      border: 1px solid #334155;
+      padding: 10px;
+      border-radius: 5px;
+      width: 80px;
+      font-size: 14px;
+    }
+
+    button {
+      background: var(--accent-blue);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      font-weight: bold;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: all 0.2s;
+      flex: 1;
+    }
+
+    button:hover:not(:disabled) {
+      background: #2563eb;
+      transform: translateY(-2px);
+    }
+
+    button:disabled {
+      background: #475569;
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .status-badge.connected {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--accent-green);
+      border: 1px solid var(--accent-green);
+    }
+
+    .status-badge.disconnected {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--accent-red);
+      border: 1px solid var(--accent-red);
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <h1>TrustFed <span>Command Center</span></h1>
+    <div id="conn-status" class="status-badge disconnected">DISCONNECTED</div>
+  </header>
+
+  <main>
+    <!-- Coordinator -->
+    <div class="coordinator-hub">
+      <div class="coordinator-sprite">🖥️</div>
+      <h2 style="margin:0; font-size:18px;">Central Coordinator</h2>
+      <div class="coordinator-stats">
+        <div class="stat">
+          <div class="stat-label">Model Version</div>
+          <div class="stat-value" id="model-version">v0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Round</div>
+          <div class="stat-value" id="round-id">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Updates</div>
+          <div class="stat-value" id="updates">0 / 0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <div>
+        <label style="font-size:12px; color:var(--text-muted);">Deadline (s)</label>
+        <input type="number" id="deadline" value="30" min="1" max="3600">
+      </div>
+      <button id="start" disabled>Start Round</button>
+    </div>
+
+    <!-- Network Grid -->
+    <div class="network-grid" id="client-grid">
+      <div style="grid-column: 1/-1; text-align:center; color:var(--text-muted);">Waiting for nodes to connect...</div>
+    </div>
+
+    <!-- Terminal Log -->
+    <div class="terminal" id="terminal">
+      <div class="log-entry"><span class="log-time">[SYS]</span> <span class="log-sys">Initializing TrustFed Command
+          Center...</span></div>
+    </div>
+
+  </main>
+
+  <script>
+    'use strict';
+    const $ = id => document.getElementById(id);
+    let currentDeadline = 30;
+    let clientsCache = {};
+
+    function log(msg, type = 'sys') {
+      const term = $('terminal');
+      const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+      const div = document.createElement('div');
+      div.className = 'log-entry';
+      div.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-${type}">${msg}</span>`;
+      term.appendChild(div);
+      term.scrollTop = term.scrollHeight;
+    }
+
+    async function req(path, options) {
+      const res = await fetch(path, options);
+      let data; try { data = await res.json() } catch { data = { detail: res.statusText } }
+      if (!res.ok) { let detail = data.detail ?? 'Request failed'; if (typeof detail !== 'string') detail = JSON.stringify(detail); throw Error(detail) }
+      return data;
+    }
+
+    function renderClient(id, status, score) {
+      const card = document.createElement('div');
+      card.className = 'client-node';
+      card.id = `node-${id}`;
+
+      if (status === 'Waiting for update') card.classList.add('training');
+      else if (status === 'Update received') card.classList.add('submitting');
+      else if (status === 'Accepted') card.classList.add('accepted');
+      else if (status === 'Rejected') card.classList.add('rejected');
+
+      const sprite = document.createElement('div');
+      sprite.className = 'sprite';
+      sprite.textContent = status === 'Rejected' ? '🤖💥' : '🤖';
+
+      const name = document.createElement('div');
+      name.className = 'client-name';
+      name.textContent = id.toUpperCase();
+
+      const statusText = document.createElement('div');
+      statusText.className = 'client-status-text';
+      statusText.textContent = status;
+
+      const packet = document.createElement('div');
+      packet.className = 'data-packet';
+
+      const barBg = document.createElement('div');
+      barBg.className = 'trust-bar-bg';
+      const barFill = document.createElement('div');
+      barFill.className = 'trust-bar-fill';
+
+      // Dynamic trust color logic
+      if (Number.isFinite(score)) {
+        barFill.style.width = (score * 100) + '%';
+        if (score >= 0.8) barFill.classList.add('trust-high');
+        else if (score >= 0.5) barFill.classList.add('trust-mid');
+        else if (score > 0) barFill.classList.add('trust-low');
+        else barFill.classList.add('trust-bad');
+      } else {
+        // Default color if no trust score yet
+        barFill.classList.add('trust-mid');
+      }
+
+      barBg.appendChild(barFill);
+      card.appendChild(sprite);
+      card.appendChild(name);
+      card.appendChild(statusText);
+      card.appendChild(barBg);
+      card.appendChild(packet);
+
+      return card;
+    }
+
+    async function refresh() {
+      try {
+        const data = await req('/api/status');
+        const r = data.round;
+        const clients = data.clients || [];
+
+        $('conn-status').textContent = 'CONNECTED';
+        $('conn-status').className = 'status-badge connected';
+
+        $('model-version').textContent = 'v' + data.model_version;
+        $('round-id').textContent = r ? '#' + r.round_id : '—';
+        $('updates').textContent = (r?.submissions_received ?? 0) + ' / ' + (r?.participants?.length ?? 0);
+
+        const grid = $('client-grid');
+        if (clients.length === 0) {
+          grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; color:var(--text-muted);">No nodes registered.</div>';
+        } else {
+          grid.innerHTML = '';
+          clients.forEach(id => {
+            let status = 'Standby';
+            if (r) {
+              if (!r.participants?.includes(id)) status = 'Not in round';
+              else if (r.status === 'completed' || r.status === 'skipped_insufficient_updates') {
+                if (r.accepted_clients?.includes(id)) status = 'Accepted';
+                else if (r.rejected_clients?.includes(id)) status = 'Rejected';
+                else if (r.submitted_clients?.includes(id)) status = 'Submitted';
+                else status = 'Missed round';
+              } else if (r.submitted_clients?.includes(id)) status = 'Update received';
+              else status = 'Waiting for update';
+            }
+
+            if (clientsCache[id] !== status) {
+              if (status === 'Waiting for update') log(`[${id}] Started local training...`, 'warn');
+              else if (status === 'Update received') log(`[${id}] Sent model weights to coordinator.`, 'sys');
+              else if (status === 'Accepted') log(`[${id}] Update validated and ACCEPTED.`, 'success');
+              else if (status === 'Rejected') log(`[${id}] Update REJECTED (Corrupted/Malicious).`, 'error');
+              clientsCache[id] = status;
+            }
+
+            const score = data.trust?.state === 'ready' ? data.trust.scores[id] : undefined;
+            grid.appendChild(renderClient(id, status, score));
+          });
+        }
+
+        if (r?.status === 'collecting') {
+          $('start').disabled = true;
+        } else {
+          $('start').disabled = clients.length < 3;
+        }
+
+        if (r?.status === 'completed' && clientsCache['ROUND_STATUS'] !== 'completed') {
+          log(`[SYS] Round ${r.round_id} finalized. Global model is now v${data.model_version}.`, 'success');
+          clientsCache['ROUND_STATUS'] = 'completed';
+        } else if (r?.status === 'collecting' && clientsCache['ROUND_STATUS'] !== 'collecting') {
+          log(`[SYS] Round ${r.round_id} started. Broadcasted global model.`, 'sys');
+          clientsCache['ROUND_STATUS'] = 'collecting';
+        } else if (!r && clientsCache['ROUND_STATUS'] !== 'idle') {
+          clientsCache['ROUND_STATUS'] = 'idle';
+        }
+
+      } catch (err) {
+        $('conn-status').textContent = 'DISCONNECTED';
+        $('conn-status').className = 'status-badge disconnected';
+        $('start').disabled = true;
+      }
+    }
+
+    async function start() {
+      const dl = Number($('deadline').value);
+      $('start').disabled = true;
+      log(`[SYS] Initializing training round with ${dl}s deadline...`, 'sys');
+      try {
+        await req('/api/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deadline_seconds: dl }) });
+        clientsCache = {};
+      } catch (err) {
+        log(`[SYS] Error starting round: ${err.message}`, 'error');
+        $('start').disabled = false;
+      }
+    }
+
+    $('start').addEventListener('click', start);
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+
+</html>

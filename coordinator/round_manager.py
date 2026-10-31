@@ -166,6 +166,14 @@ class RoundManager:
                 ),
             }
 
+    async def trust_scores(self) -> dict:
+        """Return only the committed trust history (read-only API payload)."""
+        async with self._lock:
+            return {
+                "model_version": self._state["model_version"],
+                "trust_scores": deepcopy(self._state.get("trust_scores", {})),
+            }
+
     async def start(
         self,
         deadline_seconds: int,

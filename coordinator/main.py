@@ -238,6 +238,12 @@ async def current_model():
     return await round_manager.model()
 
 
+@app.get("/model/trust-scores")
+async def current_trust_scores():
+    # The GUI must not access the Pod's internal SQLite file.
+    return await round_manager.trust_scores()
+
+
 @app.post("/rounds/start", status_code=201)
 async def start_round(request: StartRoundRequest):
     try:
