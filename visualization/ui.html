@@ -1,215 +1,653 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TrustFed</title>
-<style>
-  :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:#203149;background:#f7f9fc;font-synthesis:none}
-  *{box-sizing:border-box}body{margin:0}button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:default}[hidden]{display:none!important}
-  header{background:#18375e;color:#fff;padding:16px max(18px,calc((100% - 660px)/2));font-size:21px;font-weight:750;letter-spacing:-.5px}
-  header small{font-size:12px;color:#c9d8ee;font-weight:450;margin-left:9px;letter-spacing:0}
-  main{max-width:680px;padding:22px 18px 40px;margin:0 auto}
-  .card{background:#fff;border:1px solid #dce4ed;border-radius:11px;padding:20px;margin-bottom:15px}
-  .title{font-size:17px;font-weight:750;margin:0 0 5px}.sub{color:#6b7d91;font-size:12px;margin:0 0 15px;line-height:1.5}
-  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.sep{border:0;border-top:1px solid #e8eef4;margin:15px 0}
-  .muted{color:#66788d;font-size:12px}.value{font-weight:750;font-size:15px}.status{display:inline-block;border-radius:30px;padding:6px 10px;background:#e9eff6;color:#536882;font-size:11px;font-weight:700}
-  .status.green{background:#e0f6e9;color:#1d7544}.status.blue{background:#e6efff;color:#2259a5}.status.orange{background:#fff1d9;color:#926013}.status.red{background:#fce5e5;color:#aa3131}
-  .statline{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:14px 0}.stat{padding:12px 13px;background:#f4f7fb;border-radius:8px}.stat strong{display:block;font-size:23px;margin:3px 0}.stat label{display:block;color:#61758d;font-size:11px}
-  .entry{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid #edf1f6;font-size:13px}.entry:last-child{border-bottom:0}.entry strong{overflow-wrap:anywhere}.small{color:#708098;font-size:11px}
-  .client-name{min-width:0}.client-name strong{display:block}.client-meta{display:flex;align-items:center;gap:8px;margin-top:6px;color:#6b7d91;font-size:11px}.trust-track{width:68px;height:5px;background:#e6edf5;border-radius:10px;overflow:hidden}.trust-fill{display:block;height:100%;background:#3979a9;border-radius:10px}
-  .decision{font-size:11px;font-weight:650;color:#67809b;text-align:right}.decision.green{color:#22764a}.decision.red{color:#a53b3b}.decision.orange{color:#95671d}.inline-note{font-size:11px;color:#6d8096;line-height:1.5;margin:10px 0 0}
-  label.field{display:block;font-size:12px;font-weight:650;margin:14px 0 6px}input[type=text],input[type=number],input[type=file]{width:100%;border:1px solid #c9d6e4;border-radius:7px;padding:9px;background:#fff;font-size:13px;min-height:39px}
-  button{background:#fff;border:1px solid #c8d4e3;color:#244363;border-radius:7px;min-height:38px;padding:9px 14px;font-size:13px;font-weight:650}
-  button.primary{background:#2563eb;border-color:#2563eb;color:#fff}button.primary:hover:not(:disabled){background:#1d4ed8}
-  .actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:17px}.actions button{flex:1}
-  .notice{font-size:12px;color:#557087;margin-top:12px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;min-height:18px}.notice.error{color:#a83232}
-  .highlight{padding:13px;background:#f0f6ff;border-radius:8px;color:#284f83;font-size:13px;font-weight:600;margin-top:13px}
-  .foot{font-size:11px;color:#8291a2;margin:12px 2px;line-height:1.5}
-  @media(max-width:440px){header small{display:block;margin:2px 0}.statline{grid-template-columns:1fr}.card{padding:16px}}
-</style>
-</head>
-<body>
-<header>TrustFed <small id="page-name">Federated Learning</small></header>
-<main>
-  <div id="coordinator-view" hidden>
-    <div class="card">
-      <div class="row"><h1 class="title">Coordinator</h1><span id="co-health" class="status">Checking…</span></div>
-      <p class="sub">Register clients, start a training round, and see their submissions.</p>
-      <div class="statline">
-        <div class="stat"><label>Global model</label><strong id="model-version">v0</strong></div>
-        <div class="stat"><label>Current round</label><strong id="round-id">—</strong></div>
-      </div>
-      <div class="row"><span class="muted">Round status</span><span id="round-status" class="status">Not started</span></div>
-      <div class="row" style="margin-top:12px"><span class="muted">Updates received</span><strong id="updates">0 / 0</strong></div>
-      <div class="row" style="margin-top:12px"><span class="muted">Time remaining</span><strong id="countdown">—</strong></div>
-      <hr class="sep">
-      <div class="row"><strong>Start training</strong><span class="small" id="agg-mode">Baseline: checking…</span></div>
-      <label class="field" for="deadline">Round deadline (seconds)</label>
-      <input id="deadline" type="number" min="1" max="3600" value="30" style="max-width:170px">
-      <div class="actions"><button id="start" class="primary">Start Training Round</button></div>
-      <div id="co-message" class="notice" aria-live="polite"></div>
-    </div>
-    <div class="card">
-      <div class="row"><h2 class="title">Registered Clients</h2><span class="muted" id="reg-count">0 clients</span></div>
-      <p class="sub">Submission status is shown for the current round. Registration does not prove a client is online.</p>
-      <div class="row" id="decision-summary" hidden style="margin:0 0 9px"><span class="small">Latest round decision</span><strong class="small" id="decisions">—</strong></div>
-      <div id="client-list" class="muted">No clients registered yet.</div>
-      <p id="trust-note" class="inline-note" hidden></p>
-    </div>
-    <p class="foot">Model v0 is the initial model. The version increases only after successful aggregation. Trust scores are saved by TrustFed; a received update is not automatically accepted.</p>
-  </div>
 
-  <div id="client-view" hidden>
-    <div class="card">
-      <div class="row"><h1 class="title">Client</h1><span id="client-status" class="status">Disconnected</span></div>
-      <p class="sub">Choose your dataset and register with the coordinator. Training starts automatically when a round begins.</p>
-      <label class="field" for="client-id">Client ID</label>
-      <input id="client-id" type="text" maxlength="64" placeholder="e.g. client-a" autocomplete="off">
-      <label class="field" for="csv">Dataset (CSV)</label>
-      <input id="csv" type="file" accept=".csv,text/csv">
-      <div class="small" style="margin-top:7px" id="csv-note">Required columns: message,label (or text,label). Labels must be 0 or 1.</div>
-      <div class="actions">
-        <button id="connect" class="primary">Connect Client</button>
-        <button id="stop" disabled>Stop Client</button>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TrustFed Command Center</title>
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --panel-bg: #1e293b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-blue: #3b82f6;
+      --accent-green: #10b981;
+      --accent-red: #ef4444;
+      --accent-orange: #f59e0b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Header */
+    header {
+      background: #020617;
+      padding: 15px 30px;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      z-index: 10;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    header h1 span {
+      color: var(--accent-blue);
+    }
+
+    /* Main Layout */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      max-width: 1000px;
+      margin: 0 auto;
+      width: 100%;
+      gap: 20px;
+    }
+
+    /* Coordinator Hub */
+    .coordinator-hub {
+      background: var(--panel-bg);
+      border: 2px solid #334155;
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      position: relative;
+      z-index: 2;
+      box-shadow: 0 0 30px rgba(59, 130, 246, 0.1);
+    }
+
+    .coordinator-sprite {
+      font-size: 50px;
+      margin-bottom: 10px;
+      display: inline-block;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    .coordinator-stats {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      margin-top: 15px;
+    }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .stat-value {
+      font-size: 20px;
+      font-weight: bold;
+      margin-top: 5px;
+      color: var(--accent-blue);
+    }
+
+    /* Network Grid (Containers) */
+    .network-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 15px;
+      position: relative;
+      margin-top: 30px;
+    }
+
+    .network-grid::before {
+      content: '';
+      position: absolute;
+      top: -30px;
+      left: 50%;
+      width: 2px;
+      height: 30px;
+      background: #334155;
+      z-index: 0;
+    }
+
+    /* Client Container */
+    .client-node {
+      background: #1e293b;
+      border: 2px solid #334155;
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+      position: relative;
+      z-index: 2;
+      transition: all 0.3s ease;
+      overflow: hidden;
+    }
+
+    .sprite {
+      font-size: 40px;
+      display: inline-block;
+      transition: transform 0.3s;
+    }
+
+    .client-name {
+      font-size: 14px;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+
+    .client-status-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      height: 16px;
+    }
+
+    /* Trust Bar */
+    .trust-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: #0f172a;
+      border-radius: 3px;
+      margin-top: 15px;
+      overflow: hidden;
+    }
+
+    .trust-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent-blue);
+      transition: width 1s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.5s;
+    }
+
+    /* Dynamic Trust Colors */
+    .trust-bar-fill.trust-high {
+      background: var(--accent-green);
+    }
+
+    .trust-bar-fill.trust-mid {
+      background: var(--accent-blue);
+    }
+
+    .trust-bar-fill.trust-low {
+      background: var(--accent-orange);
+    }
+
+    .trust-bar-fill.trust-bad {
+      background: var(--accent-red);
+    }
+
+    /* Animations & States */
+    @keyframes float {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-10px);
+      }
+    }
+
+    @keyframes train-shake {
+      0% {
+        transform: translate(1px, 1px) rotate(0deg);
+      }
+
+      10% {
+        transform: translate(-1px, -2px) rotate(-1deg);
+      }
+
+      20% {
+        transform: translate(-3px, 0px) rotate(1deg);
+      }
+
+      30% {
+        transform: translate(3px, 2px) rotate(0deg);
+      }
+
+      40% {
+        transform: translate(1px, -1px) rotate(1deg);
+      }
+
+      50% {
+        transform: translate(-1px, 2px) rotate(-1deg);
+      }
+
+      60% {
+        transform: translate(-3px, 1px) rotate(0deg);
+      }
+
+      70% {
+        transform: translate(3px, 1px) rotate(-1deg);
+      }
+
+      80% {
+        transform: translate(-1px, -1px) rotate(1deg);
+      }
+
+      90% {
+        transform: translate(1px, 2px) rotate(0deg);
+      }
+
+      100% {
+        transform: translate(1px, -2px) rotate(-1deg);
+      }
+    }
+
+    @keyframes error-pulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+      }
+
+      70% {
+        box-shadow: 0 0 0 15px rgba(239, 68, 68, 0);
+      }
+
+      100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+      }
+    }
+
+    .client-node.training {
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+    }
+
+    .client-node.training .sprite {
+      animation: train-shake 0.2s infinite;
+    }
+
+    .client-node.submitting {
+      border-color: var(--accent-orange);
+      box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+    }
+
+    .data-packet {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      background: var(--accent-orange);
+      border-radius: 50%;
+      top: 50%;
+      left: 50%;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .client-node.submitting .data-packet {
+      animation: send-up 1s infinite linear;
+    }
+
+    @keyframes send-up {
+      0% {
+        transform: translate(-50%, -50%);
+        opacity: 1;
+      }
+
+      100% {
+        transform: translate(-50%, -300px);
+        opacity: 0;
+      }
+    }
+
+    .client-node.accepted {
+      border-color: var(--accent-green);
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+    }
+
+    .client-node.accepted .sprite {
+      transform: scale(1.1);
+    }
+
+    .client-node.rejected {
+      border-color: var(--accent-red);
+      animation: error-pulse 1.5s infinite;
+    }
+
+    .client-node.rejected .sprite {
+      transform: scale(0.9) rotate(-10deg);
+      filter: grayscale(1);
+    }
+
+    /* Event Log Terminal */
+    .terminal {
+      background: #000;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 15px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      height: 150px;
+      overflow-y: auto;
+      box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8);
+    }
+
+    .log-entry {
+      margin-bottom: 5px;
+    }
+
+    .log-time {
+      color: #64748b;
+    }
+
+    .log-sys {
+      color: var(--accent-blue);
+    }
+
+    .log-success {
+      color: var(--accent-green);
+    }
+
+    .log-error {
+      color: var(--accent-red);
+    }
+
+    .log-warn {
+      color: var(--accent-orange);
+    }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      background: var(--panel-bg);
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+    }
+
+    input[type="number"] {
+      background: #0f172a;
+      color: white;
+      border: 1px solid #334155;
+      padding: 10px;
+      border-radius: 5px;
+      width: 80px;
+      font-size: 14px;
+    }
+
+    button {
+      background: var(--accent-blue);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      font-weight: bold;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: all 0.2s;
+      flex: 1;
+    }
+
+    button:hover:not(:disabled) {
+      background: #2563eb;
+      transform: translateY(-2px);
+    }
+
+    button:disabled {
+      background: #475569;
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .status-badge.connected {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--accent-green);
+      border: 1px solid var(--accent-green);
+    }
+
+    .status-badge.disconnected {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--accent-red);
+      border: 1px solid var(--accent-red);
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <h1>TrustFed <span>Command Center</span></h1>
+    <div id="conn-status" class="status-badge disconnected">DISCONNECTED</div>
+  </header>
+
+  <main>
+    <!-- Coordinator -->
+    <div class="coordinator-hub">
+      <div class="coordinator-sprite">🖥️</div>
+      <h2 style="margin:0; font-size:18px;">Central Coordinator</h2>
+      <div class="coordinator-stats">
+        <div class="stat">
+          <div class="stat-label">Model Version</div>
+          <div class="stat-value" id="model-version">v0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Round</div>
+          <div class="stat-value" id="round-id">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Updates</div>
+          <div class="stat-value" id="updates">0 / 0</div>
+        </div>
       </div>
-      <div id="client-message" class="notice" aria-live="polite"></div>
     </div>
-    <div class="card">
-      <h2 class="title">Training Status</h2>
-      <div class="entry"><span class="muted">Client</span><strong id="current-id">—</strong></div>
-      <div class="entry"><span class="muted">Dataset size</span><strong id="samples">—</strong></div>
-      <div class="entry"><span class="muted">Dataset labels</span><strong id="label-mix">—</strong></div>
-      <div class="entry"><span class="muted">Round</span><strong id="client-round">—</strong></div>
-      <div class="highlight" id="training-message">Waiting for connection</div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <div>
+        <label style="font-size:12px; color:var(--text-muted);">Deadline (s)</label>
+        <input type="number" id="deadline" value="30" min="1" max="3600">
+      </div>
+      <button id="start" disabled>Start Round</button>
     </div>
-    <p class="foot">The CSV is sent to this client's local GUI process for training, not to the coordinator. The coordinator receives model parameters and a sample count.</p>
-  </div>
-</main>
-<script>
-'use strict';
-const MODE = '__TRUSTFED_MODE__';
-const $ = id => document.getElementById(id);
-const stateName = {collecting:'Collecting updates',deadline_reached:'Deadline reached',awaiting_validation:'Validating updates',aggregating:'Aggregating',completed:'Completed',skipped_insufficient_updates:'Skipped — not enough updates',aggregation_failed:'Aggregation failed'};
-const clientName = {disconnected:'Disconnected',waiting:'Waiting for round',downloading:'Downloading model',training:'Training locally',submitting:'Submitting update',submitted:'Update submitted',accepted:'Accepted',rejected:'Rejected',skipped:'Round skipped',failed:'Training failed',connection_error:'Connection error'};
-let busy=false;
-function badge(el,text,type=''){el.textContent=text;el.className='status '+type;}
-function message(id,text,isError=false){const el=$(id);el.textContent=text;el.className='notice'+(isError?' error':'');}
-async function req(path,options){
-  const res=await fetch(path,options);
-  let data;try{data=await res.json()}catch{data={detail:res.statusText}}
-  if(!res.ok){let detail=data.detail??'Request failed';if(typeof detail!=='string')detail=JSON.stringify(detail);throw Error(detail)}
-  return data;
-}
-function rowForClient(id,status,score){
- const line=document.createElement('div');line.className='entry';
- const left=document.createElement('div');left.className='client-name';
- const name=document.createElement('strong');name.textContent=id;left.append(name);
- if(Number.isFinite(score)){
-  const meta=document.createElement('div');meta.className='client-meta';
-  const track=document.createElement('span');track.className='trust-track';
-  const fill=document.createElement('span');fill.className='trust-fill';fill.style.width=(score*100)+'%';track.append(fill);
-  const label=document.createElement('span');label.textContent='Saved trust '+score.toFixed(2);
-  meta.append(track,label);left.append(meta);
- }
- const note=document.createElement('span');note.textContent=status;
- note.className='decision'+(status==='Accepted'?' green':status==='Rejected'?' red':status.startsWith('Submitted')?' orange':'');
- line.append(left,note);return line;
-}
-async function coordinatorRefresh(){
- try{
-  const data=await req('/api/status'), r=data.round, clients=data.clients||[];
-  badge($('co-health'),'Connected','green');
-  $('model-version').textContent='v'+data.model_version;
-  $('round-id').textContent=r?'Round '+r.round_id:'—';
-  badge($('round-status'),r?(stateName[r.status]||r.status):'Not started',r?.status==='completed'?'green':r?.status==='collecting'?'blue':r?.status?.startsWith('skipped')?'orange':r?.status==='aggregation_failed'?'red':'');
-  $('updates').textContent=(r?.submissions_received??0)+' / '+(r?.participants?.length??0);
-  $('countdown').textContent=r?.status==='collecting'?Math.max(0,Math.ceil((new Date(r.deadline_at)-new Date())/1000))+'s':'—';
-  $('reg-count').textContent=clients.length+' client'+(clients.length===1?'':'s');
-  $('agg-mode').textContent='Aggregation: '+(data.health?.aggregation_mode||'unknown');
-  const trustMode=data.health?.aggregation_mode==='trustfed';
-  const trust=data.trust||{state:'unavailable',scores:{}};
-  const note=$('trust-note');note.hidden=!trustMode;
-  if(trustMode){
-    if(trust.state==='ready')note.textContent='Trust values are the last saved scores for model v'+trust.model_version+'. They are not acceptance thresholds.';
-    else if(trust.state==='empty')note.textContent='Trust scores appear after a successful TrustFed round.';
-    else note.textContent='Trust scores unavailable here. Run this GUI with the same TRUSTFED_DB_PATH as the coordinator (or --state-db).';
-  }
-  const decision=$('decision-summary');
-  decision.hidden=!(r&&['completed','skipped_insufficient_updates'].includes(r.status));
-  if(!decision.hidden){
-    const accepted=r.accepted_clients?.length||0;
-    const rejected=r.rejected_clients?.length||0;
-    $('decisions').textContent=r.status==='completed'?accepted+' accepted · '+rejected+' rejected':'Skipped — no model published';
-  }
-  const area=$('client-list');area.replaceChildren();
-  if(!clients.length)area.textContent='No clients registered yet.';
-  else clients.forEach(id=>{
-   let status='Registered';
-   if(r){
-    if(!r.participants?.includes(id))status='Not in this round';
-    else if(r.status==='completed'||r.status==='skipped_insufficient_updates'){
-      if(r.accepted_clients?.includes(id))status='Accepted';
-      else if(r.rejected_clients?.includes(id))status='Rejected';
-      else if(r.submitted_clients?.includes(id))status='Submitted · round skipped';
-      else status='No submission';
-    } else if(r.submitted_clients?.includes(id))status='Update received';
-    else status='Waiting for update';
-   }
-   const score=trustMode&&trust.state==='ready'?trust.scores[id]:undefined;
-   area.append(rowForClient(id,status,score));
-  });
-  $('start').disabled=busy||clients.length<3||(r&&!['completed','skipped_insufficient_updates'].includes(r.status));
-  if(r?.status==='completed')message('co-message','Round '+r.round_id+' completed. Global model is now v'+data.model_version+'.');
-  else if(r?.status==='skipped_insufficient_updates')message('co-message','Round '+r.round_id+' skipped. Global model unchanged.');
-  else if(!r)message('co-message',clients.length<3?'Register at least 3 clients to start.':'Ready to start Round 1.');
-  else if(r.status==='collecting')message('co-message','Waiting for client submissions until the deadline.');
-  else if(r.status==='aggregation_failed')message('co-message','Aggregation failed. Model unchanged.',true);
- }catch(err){badge($('co-health'),'Coordinator unavailable','red');$('start').disabled=true;message('co-message',err.message,true)}
-}
-async function startRound(){
- const deadline=Number($('deadline').value);
- if(!Number.isInteger(deadline)||deadline<1||deadline>3600){message('co-message','Deadline must be between 1 and 3600 seconds.',true);return}
- busy=true;$('start').disabled=true;
- try{await req('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deadline_seconds:deadline})});message('co-message','Training round started.');await coordinatorRefresh()}
- catch(err){message('co-message',err.message,true)}
- finally{busy=false}
-}
-async function clientRefresh(){
- try{
-  const data=await req('/api/status');const connected=data.registered_gui;
-  badge($('client-status'),connected?'Registered':'Disconnected',connected?'green':'');
-  $('current-id').textContent=data.client_id||'—';$('samples').textContent=data.sample_count?data.sample_count+' messages':'—';$('client-round').textContent=data.round_id?'Round '+data.round_id:'—';
-  const labels=data.label_counts||{};
-  $('label-mix').textContent=data.sample_count?`${labels.scam??0} scam · ${labels.legitimate??0} legitimate`:'—';
-  $('training-message').textContent=clientName[data.status]||data.status||'Waiting';
-  $('connect').disabled=busy||connected;$('stop').disabled=busy||!connected;
-  $('client-id').disabled=connected;$('csv').disabled=connected;
-  if(connected&&data.events?.length){const ev=data.events[0];message('client-message',ev.message)}
- }catch(err){message('client-message',err.message,true)}
-}
-async function connectClient(){
- const id=$('client-id').value.trim(),file=$('csv').files[0];
- if(!/^[A-Za-z0-9_-]{1,64}$/.test(id)){message('client-message','Enter a client ID using letters, numbers, - or _.',true);return}
- if(!file){message('client-message','Choose a CSV file first.',true);return}
- if(file.size>1900000){message('client-message','CSV is too large for this demo (maximum ~1.9 MB).',true);return}
- busy=true;$('connect').disabled=true;message('client-message','Registering client…');
- try{
-  const csv_text=await file.text();
-  await req('/api/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:id,csv_text,epochs:3})});
-  message('client-message','Connected. Waiting for a training round.');
- }catch(err){message('client-message',err.message,true)}
- finally{busy=false;await clientRefresh()}
-}
-async function stopClient(){busy=true;$('stop').disabled=true;try{await req('/api/disconnect',{method:'POST'});message('client-message','Client stopped. Its registration remains saved on the coordinator.')}catch(err){message('client-message',err.message,true)}finally{busy=false;await clientRefresh()}}
-if(MODE==='coordinator'){
- $('page-name').textContent='Coordinator';$('coordinator-view').hidden=false;
- $('start').addEventListener('click',startRound);coordinatorRefresh();setInterval(coordinatorRefresh,1200);
-}else{
- $('page-name').textContent='Client';$('client-view').hidden=false;
- $('connect').addEventListener('click',connectClient);$('stop').addEventListener('click',stopClient);
- clientRefresh();setInterval(clientRefresh,1000);
-}
-</script>
+
+    <!-- Network Grid -->
+    <div class="network-grid" id="client-grid">
+      <div style="grid-column: 1/-1; text-align:center; color:var(--text-muted);">Waiting for nodes to connect...</div>
+    </div>
+
+    <!-- Terminal Log -->
+    <div class="terminal" id="terminal">
+      <div class="log-entry"><span class="log-time">[SYS]</span> <span class="log-sys">Initializing TrustFed Command
+          Center...</span></div>
+    </div>
+
+  </main>
+
+  <script>
+    'use strict';
+    const $ = id => document.getElementById(id);
+    let currentDeadline = 30;
+    let clientsCache = {};
+
+    function log(msg, type = 'sys') {
+      const term = $('terminal');
+      const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+      const div = document.createElement('div');
+      div.className = 'log-entry';
+      div.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-${type}">${msg}</span>`;
+      term.appendChild(div);
+      term.scrollTop = term.scrollHeight;
+    }
+
+    async function req(path, options) {
+      const res = await fetch(path, options);
+      let data; try { data = await res.json() } catch { data = { detail: res.statusText } }
+      if (!res.ok) { let detail = data.detail ?? 'Request failed'; if (typeof detail !== 'string') detail = JSON.stringify(detail); throw Error(detail) }
+      return data;
+    }
+
+    function renderClient(id, status, score) {
+      const card = document.createElement('div');
+      card.className = 'client-node';
+      card.id = `node-${id}`;
+
+      if (status === 'Waiting for update') card.classList.add('training');
+      else if (status === 'Update received') card.classList.add('submitting');
+      else if (status === 'Accepted') card.classList.add('accepted');
+      else if (status === 'Rejected') card.classList.add('rejected');
+
+      const sprite = document.createElement('div');
+      sprite.className = 'sprite';
+      sprite.textContent = status === 'Rejected' ? '🤖💥' : '🤖';
+
+      const name = document.createElement('div');
+      name.className = 'client-name';
+      name.textContent = id.toUpperCase();
+
+      const statusText = document.createElement('div');
+      statusText.className = 'client-status-text';
+      statusText.textContent = status;
+
+      const packet = document.createElement('div');
+      packet.className = 'data-packet';
+
+      const barBg = document.createElement('div');
+      barBg.className = 'trust-bar-bg';
+      const barFill = document.createElement('div');
+      barFill.className = 'trust-bar-fill';
+
+      // Dynamic trust color logic
+      if (Number.isFinite(score)) {
+        barFill.style.width = (score * 100) + '%';
+        if (score >= 0.8) barFill.classList.add('trust-high');
+        else if (score >= 0.5) barFill.classList.add('trust-mid');
+        else if (score > 0) barFill.classList.add('trust-low');
+        else barFill.classList.add('trust-bad');
+      } else {
+        // Default color if no trust score yet
+        barFill.classList.add('trust-mid');
+      }
+
+      barBg.appendChild(barFill);
+      card.appendChild(sprite);
+      card.appendChild(name);
+      card.appendChild(statusText);
+      card.appendChild(barBg);
+      card.appendChild(packet);
+
+      return card;
+    }
+
+    async function refresh() {
+      try {
+        const data = await req('/api/status');
+        const r = data.round;
+        const clients = data.clients || [];
+
+        $('conn-status').textContent = 'CONNECTED';
+        $('conn-status').className = 'status-badge connected';
+
+        $('model-version').textContent = 'v' + data.model_version;
+        $('round-id').textContent = r ? '#' + r.round_id : '—';
+        $('updates').textContent = (r?.submissions_received ?? 0) + ' / ' + (r?.participants?.length ?? 0);
+
+        const grid = $('client-grid');
+        if (clients.length === 0) {
+          grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; color:var(--text-muted);">No nodes registered.</div>';
+        } else {
+          grid.innerHTML = '';
+          clients.forEach(id => {
+            let status = 'Standby';
+            if (r) {
+              if (!r.participants?.includes(id)) status = 'Not in round';
+              else if (r.status === 'completed' || r.status === 'skipped_insufficient_updates') {
+                if (r.accepted_clients?.includes(id)) status = 'Accepted';
+                else if (r.rejected_clients?.includes(id)) status = 'Rejected';
+                else if (r.submitted_clients?.includes(id)) status = 'Submitted';
+                else status = 'Missed round';
+              } else if (r.submitted_clients?.includes(id)) status = 'Update received';
+              else status = 'Waiting for update';
+            }
+
+            if (clientsCache[id] !== status) {
+              if (status === 'Waiting for update') log(`[${id}] Started local training...`, 'warn');
+              else if (status === 'Update received') log(`[${id}] Sent model weights to coordinator.`, 'sys');
+              else if (status === 'Accepted') log(`[${id}] Update validated and ACCEPTED.`, 'success');
+              else if (status === 'Rejected') log(`[${id}] Update REJECTED (Corrupted/Malicious).`, 'error');
+              clientsCache[id] = status;
+            }
+
+            const score = data.trust?.state === 'ready' ? data.trust.scores[id] : undefined;
+            grid.appendChild(renderClient(id, status, score));
+          });
+        }
+
+        if (r?.status === 'collecting') {
+          $('start').disabled = true;
+        } else {
+          $('start').disabled = clients.length < 3;
+        }
+
+        if (r?.status === 'completed' && clientsCache['ROUND_STATUS'] !== 'completed') {
+          log(`[SYS] Round ${r.round_id} finalized. Global model is now v${data.model_version}.`, 'success');
+          clientsCache['ROUND_STATUS'] = 'completed';
+        } else if (r?.status === 'collecting' && clientsCache['ROUND_STATUS'] !== 'collecting') {
+          log(`[SYS] Round ${r.round_id} started. Broadcasted global model.`, 'sys');
+          clientsCache['ROUND_STATUS'] = 'collecting';
+        } else if (!r && clientsCache['ROUND_STATUS'] !== 'idle') {
+          clientsCache['ROUND_STATUS'] = 'idle';
+        }
+
+      } catch (err) {
+        $('conn-status').textContent = 'DISCONNECTED';
+        $('conn-status').className = 'status-badge disconnected';
+        $('start').disabled = true;
+      }
+    }
+
+    async function start() {
+      const dl = Number($('deadline').value);
+      $('start').disabled = true;
+      log(`[SYS] Initializing training round with ${dl}s deadline...`, 'sys');
+      try {
+        await req('/api/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deadline_seconds: dl }) });
+        clientsCache = {};
+      } catch (err) {
+        log(`[SYS] Error starting round: ${err.message}`, 'error');
+        $('start').disabled = false;
+      }
+    }
+
+    $('start').addEventListener('click', start);
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
 </body>
+
 </html>
