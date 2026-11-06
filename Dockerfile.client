@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the application code
 COPY client/ ./client/
 COPY shared/ ./shared/
+COPY visualization/ ./visualization/
 COPY data/ ./data/
 
 # We don't need a CMD here because we will define the command in the Kubernetes YAML.
