@@ -37,6 +37,11 @@ class RoundManager:
 
         self._lock = asyncio.Lock()
 
+        # Presence is deliberately ephemeral: persisted registration is NOT
+        # evidence of a currently connected or dataset-ready client.
+        self._heartbeat_ttl_seconds = 30.0
+        self._client_presence = {}
+
         # Existing unit tests can still run without persistence.
         self._store = (
             SQLiteStateStore(db_path)
@@ -157,6 +162,91 @@ class RoundManager:
                 "count": len(clients),
             }
 
+    async def heartbeat(
+        self, client_id: str, dataset_ready: bool, sample_count: int,
+    ) -> dict:
+        """Record a client's self-reported dataset readiness and liveness.
+
+        The coordinator never receives raw CSV data. Clients must validate
+        their own dataset before reporting dataset_ready=True.
+        """
+        if sample_count < 0:
+            raise ValueError("Sample count cannot be negative")
+        if dataset_ready and sample_count == 0:
+            raise ValueError("Ready datasets must contain at least one sample")
+
+        async with self._lock:
+            if client_id not in self._state["registered_clients"]:
+                raise ValueError("Client is not registered")
+            self._client_presence[client_id] = {
+                "seen_at": datetime.now(timezone.utc).isoformat(),
+                "seen_monotonic": monotonic(),
+                "dataset_ready": bool(dataset_ready),
+                "sample_count": sample_count,
+            }
+            return {"client_id": client_id, "status": "heartbeat_received"}
+
+    async def client_statuses(self) -> dict:
+        """Report online status independently from persisted registration.
+
+        Heartbeats expire after 30 seconds and intentionally do not survive
+        coordinator restarts. This avoids showing disconnected clients online.
+        """
+        async with self._lock:
+            now = monotonic()
+            clients = []
+            for client_id in self._state["registered_clients"]:
+                presence = self._client_presence.get(client_id)
+                online = bool(
+                    presence and now - presence["seen_monotonic"]
+                    <= self._heartbeat_ttl_seconds
+                )
+                ready = bool(online and presence["dataset_ready"])
+                clients.append({
+                    "client_id": client_id,
+                    "online": online,
+                    "dataset_ready": ready,
+                    "sample_count": presence["sample_count"] if online else 0,
+                    "last_seen_at": presence["seen_at"] if presence else None,
+                })
+            return {
+                "clients": clients,
+                "online_count": sum(c["online"] for c in clients),
+                "ready_count": sum(c["dataset_ready"] for c in clients),
+            }
+
+    async def training_progress(self) -> dict:
+        """Five successful publications are required; skipped attempts do not count.
+
+        Each completed round increments model_version exactly once, while
+        next_round_id is incremented on *every* attempted round. Deriving the
+        counters from persisted fields preserves progress across restarts
+        without changing the SQLite snapshot format.
+        """
+        async with self._lock:
+            self._check_deadline()
+            state = self._state
+            current = state["current"]
+            terminal_statuses = {"completed", "skipped_insufficient_updates"}
+            in_progress = bool(
+                current is not None
+                and current["status"] not in terminal_statuses
+            )
+            attempted = state["next_round_id"] - 1
+            successful = state["model_version"]
+            skipped = max(0, attempted - successful - int(in_progress))
+            target = 5
+            return {
+                "target_successful_rounds": target,
+                "successful_rounds": successful,
+                "attempted_rounds": attempted,
+                "skipped_rounds": skipped,
+                "round_in_progress": in_progress,
+                "current_round_status": current["status"] if current else None,
+                "remaining_successful_rounds": max(0, target - successful),
+                "ready_for_evaluation": successful >= target and not in_progress,
+            }
+
     async def model(self) -> dict:
         async with self._lock:
             return {
@@ -198,6 +288,11 @@ class RoundManager:
                 raise ValueError(
                     "A round already exists; "
                     "it must be finalised first"
+                )
+
+            if self._state["model_version"] >= 5:
+                raise ValueError(
+                    "Five successful rounds are complete; no more rounds can start"
                 )
 
             proposed = deepcopy(self._state)

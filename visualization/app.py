@@ -1,4 +1,4 @@
-"""Optional GUI for TrustFed, with no changes to existing coordinator/client code.
+"""Optional GUI for TrustFed with coordinator-backed client readiness status.
 
 Run from the repository root:
     python -m visualization.app coordinator --port 8500
@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from client.train import local_train
+from visualization.final_evaluation import evaluate_final_model
 
 UI_PATH = Path(__file__).with_name("ui.html")
 ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -130,6 +131,11 @@ class StartRequest(BaseModel):
     deadline_seconds: int = Field(default=30, ge=1, le=3600)
 
 
+class FinalEvaluationRequest(BaseModel):
+    # CSV remains in the browser/local GUI process, never sent to coordinator.
+    csv_text: str = Field(min_length=1, max_length=2_000_000)
+
+
 def read_dataset(csv_text: str):
     reader = csv.DictReader(io.StringIO(csv_text.lstrip("\ufeff")))
     columns = reader.fieldnames or []
@@ -169,6 +175,7 @@ class LocalClient:
         self.epochs = 3
         self.running = False
         self.task = None
+        self.heartbeat_task = None
         self.status = "disconnected"
         self.round_id = None
         self.last_attempted = 0
@@ -213,6 +220,7 @@ class LocalClient:
             self.log(f"Registered as {self.client_id}; {len(texts)} local messages ready.")
             if response.status_code == 409:
                 self.log("ID already existed; continuing as a returning client (no authentication).")
+            self.heartbeat_task = asyncio.create_task(self.send_heartbeats())
             self.task = asyncio.create_task(self.poll())
             return self.snapshot()
 
@@ -234,14 +242,41 @@ class LocalClient:
     async def disconnect(self):
         async with self.lock:
             self.running = False
-            task = self.task
+            tasks = [task for task in (self.task, self.heartbeat_task) if task is not None]
             self.task = None
-            if task is not None:
+            self.heartbeat_task = None
+            for task in tasks:
                 task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
             self.status = "disconnected"
             self.log("Local client process stopped polling. Registration remains saved by coordinator.")
             return self.snapshot()
+
+    async def send_heartbeats(self):
+        """Keep coordinator presence accurate without uploading private CSV data.
+
+        Training runs in a worker thread, so this async task can send
+        heartbeats even while the client trains a model.
+        """
+        while self.running:
+            try:
+                response = await asyncio.to_thread(
+                    api_request, "POST", f"{self.url}/clients/heartbeat",
+                    json={
+                        "client_id": self.client_id,
+                        "dataset_ready": bool(self.texts),
+                        "sample_count": len(self.texts),
+                    },
+                )
+                if response.status_code != 200:
+                    self.log(f"Heartbeat HTTP {response.status_code}; check coordinator deployment.")
+            except asyncio.CancelledError:
+                raise
+            except ConnectionError as exc:
+                self.log(f"Heartbeat failed: {str(exc)[:140]}")
+            if self.running:
+                await asyncio.sleep(10)
 
     async def poll(self):
         while self.running:
@@ -361,6 +396,22 @@ def build_app(mode: str, coordinator_url: str, state_db: str | None = None):
                     raise RuntimeError(f"Round HTTP {r.status_code}")
                 model = m.json()
                 current_round = r.json() if r.status_code == 200 else None
+                progress_response = api_request("GET", f"{coordinator_url}/rounds/progress")
+                # Support older coordinator Docker images during transition.
+                if progress_response.status_code == 404:
+                    training_progress = None
+                elif progress_response.ok:
+                    training_progress = progress_response.json()
+                else:
+                    raise RuntimeError(f"Round progress HTTP {progress_response.status_code}")
+                # Older coordinator images may not provide this endpoint yet.
+                presence_response = api_request("GET", f"{coordinator_url}/clients/status")
+                if presence_response.status_code == 404:
+                    client_statuses = None
+                elif presence_response.ok:
+                    client_statuses = presence_response.json()
+                else:
+                    raise RuntimeError(f"Client status HTTP {presence_response.status_code}")
                 trust = {"state": "not_trustfed", "scores": {}}
                 if h.json().get("aggregation_mode") == "trustfed":
                     trust = read_api_trust_scores(coordinator_url, model["model_version"])
@@ -372,6 +423,8 @@ def build_app(mode: str, coordinator_url: str, state_db: str | None = None):
                 return {
                     "health": h.json(),
                     "clients": c.json()["clients"],
+                    "client_statuses": client_statuses,
+                    "training_progress": training_progress,
                     "round": current_round,
                     "model_version": model["model_version"],
                     "model_size": len(model["parameters"]),
@@ -394,6 +447,58 @@ def build_app(mode: str, coordinator_url: str, state_db: str | None = None):
             if response.status_code != 201:
                 raise HTTPException(response.status_code, response.text[:250])
             return response.json()
+
+        @app.post("/api/evaluate")
+        async def evaluate_final(request: FinalEvaluationRequest):
+            """Evaluate v5+ with held-out CSV; do not modify coordinator state."""
+            try:
+                texts, labels = read_dataset(request.csv_text)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+
+            def evaluate():
+                progress_response = api_request(
+                    "GET", f"{coordinator_url}/rounds/progress",
+                )
+                if not progress_response.ok:
+                    raise HTTPException(
+                        503, "Training progress unavailable on coordinator",
+                    )
+                progress = progress_response.json()
+                if not progress.get("ready_for_evaluation"):
+                    raise HTTPException(
+                        409, "Complete five successful rounds before evaluation",
+                    )
+
+                model_response = api_request(
+                    "GET", f"{coordinator_url}/model/current",
+                )
+                if not model_response.ok:
+                    raise HTTPException(503, "Global model unavailable")
+                model = model_response.json()
+                version = model.get("model_version")
+                if (
+                    not isinstance(version, int)
+                    or isinstance(version, bool)
+                    or version != progress.get("successful_rounds")
+                ):
+                    raise HTTPException(
+                        409, "Global model changed during evaluation; try again",
+                    )
+                try:
+                    metrics = evaluate_final_model(
+                        model["parameters"], texts, labels,
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise HTTPException(
+                        502, "Coordinator returned an invalid global model",
+                    ) from exc
+                return {"model_version": version, **metrics}
+
+            try:
+                return await asyncio.to_thread(evaluate)
+            except ConnectionError as exc:
+                raise HTTPException(503, str(exc)) from exc
 
     else:
         @app.get("/api/status")

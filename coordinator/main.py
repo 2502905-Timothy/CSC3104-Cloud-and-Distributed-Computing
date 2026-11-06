@@ -27,6 +27,16 @@ class ClientRegistration(BaseModel):
     )
 
 
+class ClientHeartbeatRequest(BaseModel):
+    client_id: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
+    dataset_ready: bool
+    sample_count: int = Field(ge=0)
+
+
 class StartRoundRequest(BaseModel):
     deadline_seconds: int = Field(
         default=30,
@@ -231,6 +241,28 @@ async def register_client(request: ClientRegistration):
 @app.get("/clients")
 async def list_clients():
     return await round_manager.clients()
+
+
+@app.post("/clients/heartbeat")
+async def client_heartbeat(request: ClientHeartbeatRequest):
+    try:
+        return await round_manager.heartbeat(
+            client_id=request.client_id,
+            dataset_ready=request.dataset_ready,
+            sample_count=request.sample_count,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/clients/status")
+async def client_statuses():
+    return await round_manager.client_statuses()
+
+
+@app.get("/rounds/progress")
+async def training_progress():
+    return await round_manager.training_progress()
 
 
 @app.get("/model/current")
