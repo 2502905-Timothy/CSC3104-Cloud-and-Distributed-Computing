@@ -4,7 +4,7 @@ metadata:
   name: trustfed-clients
 spec:
   serviceName: "trustfed-clients-headless"
-  replicas: 5
+  replicas: 3
   selector:
     matchLabels:
       app: client
@@ -15,20 +15,22 @@ spec:
     spec:
       containers:
       - name: client
-        image: localhost/trustfed-client:v1
+        image: localhost/trustfed-client:v2
         imagePullPolicy: IfNotPresent
-        command: ["/bin/sh", "-c"]
+        # Each Pod serves the upload GUI and trains on its own uploaded CSV.
+        command: ["python", "-m", "visualization.app"]
         args:
-          - |
-            POD_INDEX=${HOSTNAME##*-}
-            FILE_INDEX=$((POD_INDEX + 1))
-            echo "Starting Client $POD_INDEX (Using data file client_${FILE_INDEX}_train.csv)"
-            python -m client.client \
-              --client-id "client-$FILE_INDEX" \
-              --data "/app/data/client_${FILE_INDEX}_train.csv" \
-              --coordinator "http://trustfed-coordinator:8000" \
-              --max-rounds 10 \
-              --poll 2
+          - "client"
+          - "--host"
+          - "0.0.0.0"
+          - "--port"
+          - "8501"
+          - "--coordinator-url"
+          - "http://trustfed-coordinator:8000"
+        ports:
+          - name: client-gui
+            containerPort: 8501
+            protocol: TCP
         resources:
           requests:
             memory: "256Mi"
@@ -46,5 +48,6 @@ spec:
   selector:
     app: client
   ports:
-    - port: 80
-      targetPort: 80
+    - name: client-gui
+      port: 8501
+      targetPort: client-gui

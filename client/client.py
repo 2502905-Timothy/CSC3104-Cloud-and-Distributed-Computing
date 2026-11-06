@@ -15,6 +15,7 @@
 import argparse
 import csv
 import time
+from threading import Event, Thread
 import requests
 from client.train import local_train
 
@@ -28,6 +29,31 @@ def load_csv(path: str):
     column = "message" if rows and "message" in rows[0] else "text"
     return [r[column] for r in rows], [int(r["label"]) for r in rows]
 
+def heartbeat_loop(client_id: str, sample_count: int, url: str, stop: Event):
+    """Refresh online/dataset-ready status while this Pod trains locally."""
+    warned_missing_endpoint = False
+    while not stop.is_set():
+        try:
+            response = requests.post(
+                f"{url}/clients/heartbeat",
+                json={
+                    "client_id": client_id,
+                    "dataset_ready": sample_count > 0,
+                    "sample_count": sample_count,
+                },
+                timeout=8,
+            )
+            if response.status_code == 404:
+                if not warned_missing_endpoint:
+                    print(f"[{client_id}] Coordinator lacks readiness endpoint (update its image).")
+                warned_missing_endpoint = True
+            elif response.status_code != 200:
+                print(f"[{client_id}] Heartbeat HTTP {response.status_code}")
+        except requests.RequestException as exc:
+            print(f"[{client_id}] Heartbeat failed: {exc}")
+        stop.wait(10)
+
+
 def run(client_id :str, data_path: str, url: str, epochs: int, max_rounds:int, poll: float):
     #Main loop: keep checking the coordinator and take part in rounds until done.
     texts, labels = load_csv(data_path)
@@ -40,54 +66,66 @@ def run(client_id :str, data_path: str, url: str, epochs: int, max_rounds:int, p
         
     done = 0            #how many rounds we successfully submitted to
     last_round = 0      #highest round we already tried, so we never submit twice to one round
-    
-    while done < max_rounds:
-        time.sleep(poll)
-        try:
-            #Step 2: Ask for what the current round looks like
-            rnd = http.get(f"{url}/rounds/current", timeout = 10)
-            if rnd.status_code == 404:
-                continue
-            rnd.raise_for_status()
-            info = rnd.json()
+
+    heartbeat_stop = Event()
+    heartbeat_thread = Thread(
+        target=heartbeat_loop,
+        args=(client_id, len(texts), url, heartbeat_stop),
+        daemon=True,
+    )
+    heartbeat_thread.start()
+    try:
+        while done < max_rounds:
+            time.sleep(poll)
+            try:
+                #Step 2: Ask for what the current round looks like
+                rnd = http.get(f"{url}/rounds/current", timeout = 10)
+                if rnd.status_code == 404:
+                    continue
+                rnd.raise_for_status()
+                info = rnd.json()
             
-            #Skips this check cycle and look again unless ALL of this holds:
-            if(
-                info["status"] != "collecting"              # round must be open for updates
-                or info["round_id"] <= last_round           # not a round we already handled
-                or client_id not in info["participants"]    #we must be part of this round
-                or client_id in info["submitted_clients"]   #We must not have submitted already
-            ):
-                continue
+                #Skips this check cycle and look again unless ALL of this holds:
+                if(
+                    info["status"] != "collecting"              # round must be open for updates
+                    or info["round_id"] <= last_round           # not a round we already handled
+                    or client_id not in info["participants"]    #we must be part of this round
+                    or client_id in info["submitted_clients"]   #We must not have submitted already
+                ):
+                    continue
             
-            #Step 3: download the current global model
-            model = http.get(f"{url}/model/current", timeout=10).json()
-            if model["model_version"] != info["model_version"]:
-                continue
+                #Step 3: download the current global model
+                model = http.get(f"{url}/model/current", timeout=10).json()
+                if model["model_version"] != info["model_version"]:
+                    continue
             
-            #Step 4 : train locally, starting from the global model
-            new_parms = local_train(model["parameters"], texts, labels, epochs = epochs, seed = info["round_id"])
+                #Step 4 : train locally, starting from the global model
+                new_parms = local_train(model["parameters"], texts, labels, epochs = epochs, seed = info["round_id"])
             
-            #Step 5: upload the results
-            resp = http.post(
-                f"{url}/updates", 
-                json={
-                    "client_id": client_id,
-                    "round_id": info["round_id"],
-                    "model_version": info["model_version"],     #Must match, or the coordinator rejects it
-                    "sample_count": len(texts),                 #becomes our weight in FedAvg
-                    "parameters": new_parms,
-                },
-                timeout=30,
-            )
-            print(f"[{client_id} round {info['round_id']}: {resp.status_code} {resp.json()}]")
-            last_round = info["round_id"]                       #never retry the same round
-            if resp.ok:
-                done += 1
-        except requests.RequestException as exc:
-            #Network error: coordinator may be restarting
-            # Don't crash: just keeps polling until it comes back
-            print(f"[{client_id}] coordinator unreachable: {exc}")
+                #Step 5: upload the results
+                resp = http.post(
+                    f"{url}/updates",
+                    json={
+                        "client_id": client_id,
+                        "round_id": info["round_id"],
+                        "model_version": info["model_version"],     #Must match, or the coordinator rejects it
+                        "sample_count": len(texts),                 #becomes our weight in FedAvg
+                        "parameters": new_parms,
+                    },
+                    timeout=30,
+                )
+                print(f"[{client_id} round {info['round_id']}: {resp.status_code} {resp.json()}]")
+                last_round = info["round_id"]                       #never retry the same round
+                if resp.ok:
+                    done += 1
+            except requests.RequestException as exc:
+                #Network error: coordinator may be restarting
+                # Don't crash: just keeps polling until it comes back
+                print(f"[{client_id}] coordinator unreachable: {exc}")
+    finally:
+        heartbeat_stop.set()
+        heartbeat_thread.join(timeout=1)
+
             
             
 if __name__ == "__main__":

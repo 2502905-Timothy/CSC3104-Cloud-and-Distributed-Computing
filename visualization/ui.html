@@ -100,6 +100,11 @@
       color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 1px;
+      min-height: 32px;
+      line-height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .stat-value {
@@ -148,13 +153,33 @@
       height: 16px;
     }
 
-    /* Trust Bar */
+    /* Trust score is always shown numerically, alongside its visual bar. */
+    .trust-score-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      margin-top: 15px;
+      font-size: 12px;
+    }
+
+    .trust-score-title {
+      color: var(--text-muted);
+    }
+
+    .trust-score-value {
+      color: var(--text-main);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
     .trust-bar-bg {
       width: 100%;
       height: 6px;
       background: #0f172a;
       border-radius: 3px;
-      margin-top: 15px;
+      margin-top: 8px;
       overflow: hidden;
     }
 
@@ -432,7 +457,20 @@
             <div class="stat-label">Updates</div>
             <div class="stat-value" id="updates">0 / 0</div>
           </div>
+          <div class="stat">
+            <div class="stat-label">Clients Ready</div>
+            <div class="stat-value" id="ready-count">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Successful Rounds</div>
+            <div class="stat-value" id="rounds-completed">— / 5</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Skipped Rounds</div>
+            <div class="stat-value" id="rounds-skipped">—</div>
+          </div>
         </div>
+        <div id="training-progress-message" style="margin-top:15px; color:var(--text-muted); font-size:12px;">Five successful rounds required before final evaluation.</div>
       </div>
 
       <div class="controls" style="margin-top: 20px;">
@@ -441,6 +479,31 @@
           <input type="number" id="deadline" value="15" min="1" max="3600">
         </div>
         <button id="start" disabled>Start Round</button>
+      </div>
+
+      <div class="client-card" style="margin-top:20px;">
+        <h3 style="margin:0 0 8px 0; font-size:16px;">Final Model Evaluation</h3>
+        <p style="color:var(--text-muted); font-size:12px;">
+          After five successful rounds, select the held-out final_test_set.csv.
+          Evaluation reads the published global model and does not retrain it.
+        </p>
+        <div class="field-group">
+          <label for="evaluation-csv">Held-out test dataset (CSV)</label>
+          <input id="evaluation-csv" type="file" accept=".csv,text/csv">
+        </div>
+        <button id="evaluate" disabled>Evaluate Final Model</button>
+        <div id="evaluation-message" role="status" style="margin-top:12px; color:var(--text-muted); font-size:12px;">
+          Complete five successful rounds to enable evaluation.
+        </div>
+        <div id="evaluation-results" hidden style="margin-top:15px;">
+          <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;" id="evaluation-summary"></div>
+          <div class="coordinator-stats" style="flex-wrap:wrap; gap:18px;">
+            <div class="stat"><div class="stat-label">Accuracy</div><div class="stat-value" id="eval-accuracy">—</div></div>
+            <div class="stat"><div class="stat-label">Precision</div><div class="stat-value" id="eval-precision">—</div></div>
+            <div class="stat"><div class="stat-label">Recall</div><div class="stat-value" id="eval-recall">—</div></div>
+            <div class="stat"><div class="stat-label">F1 Score</div><div class="stat-value" id="eval-f1">—</div></div>
+          </div>
+        </div>
       </div>
 
       <div class="network-grid" id="client-grid">
@@ -501,6 +564,9 @@
     const REQUIRED_CLIENTS = 3;
     let busy = false;
     let clientsCache = {};
+    let evaluationBusy = false;
+    let evaluationVersion = null;
+    let evaluationEnabled = false;
 
     // --- LOGGING (COORDINATOR) ---
     function log(msg, type = 'sys') {
@@ -522,7 +588,7 @@
     }
 
     // --- COORDINATOR LOGIC ---
-    function renderClient(id, status, score) {
+    function renderClient(id, status, score, presence) {
       const card = document.createElement('div');
       card.className = 'client-node';
       if (status === 'Waiting for update') card.classList.add('training');
@@ -530,11 +596,26 @@
       else if (status === 'Accepted') card.classList.add('accepted');
       else if (status === 'Rejected') card.classList.add('rejected');
 
+      const presenceText = !presence ? 'Live status unavailable'
+        : !presence.online ? 'Offline'
+        : presence.dataset_ready ? `Online · Dataset ready · ${presence.sample_count} samples`
+        : 'Online · Dataset not ready';
+      // Show the actual committed trust score; missing data must not look like zero trust.
+      const hasScore = typeof score === 'number' && Number.isFinite(score) && score >= 0 && score <= 1;
+      const trustText = hasScore ? `${score.toFixed(2)} / 1.00 (${Math.round(score * 100)}%)` : 'Not available';
+      const trustWidth = hasScore ? score * 100 : 0;
+      const trustClass = !hasScore ? 'trust-bad'
+        : score >= 0.8 ? 'trust-high' : score >= 0.5 ? 'trust-mid' : score > 0 ? 'trust-low' : 'trust-bad';
       card.innerHTML = `
         <div class="sprite">${status === 'Rejected' ? '🤖💥' : '🤖'}</div>
         <div class="client-name">${id.toUpperCase()}</div>
         <div class="client-status-text">${status}</div>
-        <div class="trust-bar-bg"><div class="trust-bar-fill ${score >= 0.8 ? 'trust-high' : score >= 0.5 ? 'trust-mid' : score > 0 ? 'trust-low' : 'trust-bad'}" style="width: ${score ? score * 100 : 0}%"></div></div>
+        <div class="client-status-text" style="font-size:11px; margin-top:4px;">${presenceText}</div>
+        <div class="trust-score-row">
+          <span class="trust-score-title">Trust Score</span>
+          <span class="trust-score-value">${trustText}</span>
+        </div>
+        <div class="trust-bar-bg" aria-label="Trust score visual indicator"><div class="trust-bar-fill ${trustClass}" style="width: ${trustWidth}%"></div></div>
       `;
       return card;
     }
@@ -544,6 +625,25 @@
         const data = await req('/api/status');
         const r = data.round;
         const clients = data.clients || [];
+        const presence = data.client_statuses;
+        const progress = data.training_progress;
+        const targetReached = Boolean(progress?.ready_for_evaluation);
+        evaluationEnabled = targetReached;
+        $('evaluate').disabled = !targetReached || !$('evaluation-csv').files.length || evaluationBusy;
+        if (evaluationVersion !== null && evaluationVersion !== data.model_version) {
+          $('evaluation-results').hidden = true;
+          evaluationVersion = null;
+        }
+        const clientPresence = new Map((presence?.clients || []).map(c => [c.client_id, c]));
+        $('rounds-completed').textContent = progress
+          ? `${progress.successful_rounds} / ${progress.target_successful_rounds}` : '— / 5';
+        $('rounds-skipped').textContent = progress ? String(progress.skipped_rounds) : '—';
+        $('training-progress-message').textContent = targetReached
+          ? 'Five successful rounds completed. Final model is ready for evaluation.'
+          : progress
+            ? `${progress.remaining_successful_rounds} successful round(s) remaining · ${progress.attempted_rounds} attempt(s) so far.`
+            : 'Round progress requires the updated coordinator backend.';
+        $('ready-count').textContent = presence ? `${presence.ready_count} / ${clients.length}` : '—';
 
         $('conn-status').textContent = 'CONNECTED';
         $('conn-status').className = 'status-badge connected';
@@ -576,24 +676,24 @@
               clientsCache[id] = status;
             }
             const score = data.trust?.state === 'ready' ? data.trust.scores[id] : undefined;
-            grid.appendChild(renderClient(id, status, score));
+            grid.appendChild(renderClient(id, status, score, clientPresence.get(id)));
           });
         }
 
-        if (r?.status === 'collecting') {
+        if (r && !['completed', 'skipped_insufficient_updates'].includes(r.status)) {
           $('start').disabled = true;
           if (clientsCache['ROUND'] !== 'collecting') {
             log(`[SYS] Round ${r.round_id} started.`, 'sys');
             clientsCache['ROUND'] = 'collecting';
           }
         } else {
-          $('start').disabled = clients.length < REQUIRED_CLIENTS;
+          $('start').disabled = clients.length < REQUIRED_CLIENTS || targetReached;
           if (clients.length > 0 && clients.length < REQUIRED_CLIENTS && clientsCache['WAIT'] !== clients.length) {
             log(`[SYS] Waiting for ${REQUIRED_CLIENTS - clients.length} more client(s)...`, 'warn');
             clientsCache['WAIT'] = clients.length;
           }
           if (clients.length >= REQUIRED_CLIENTS && clientsCache['WAIT'] !== 'ready') {
-            log(`[SYS] All ${REQUIRED_CLIENTS} nodes connected. Ready.`, 'success');
+            log(`[SYS] ${REQUIRED_CLIENTS} nodes registered. Check dataset readiness above.`, 'success');
             clientsCache['WAIT'] = 'ready';
           }
         }
@@ -606,6 +706,39 @@
         $('conn-status').textContent = 'DISCONNECTED';
         $('conn-status').className = 'status-badge disconnected';
         $('start').disabled = true;
+        $('evaluate').disabled = true;
+        evaluationEnabled = false;
+      }
+    }
+
+    async function evaluateFinal() {
+      const file = $('evaluation-csv').files[0];
+      if (!file || !evaluationEnabled || evaluationBusy) return;
+      evaluationBusy = true;
+      $('evaluate').disabled = true;
+      $('evaluation-results').hidden = true;
+      $('evaluation-message').textContent = 'Evaluating held-out dataset...';
+      try {
+        if (file.size > 2_000_000) throw Error('CSV exceeds 2 MB upload limit.');
+        const result = await req('/api/evaluate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ csv_text: await file.text() }),
+        });
+        for (const key of ['accuracy', 'precision', 'recall', 'f1']) {
+          $('eval-' + key).textContent = (result[key] * 100).toFixed(2) + '%';
+        }
+        evaluationVersion = result.model_version;
+        $('evaluation-summary').textContent = `Model v${result.model_version} · ${result.sample_count} held-out samples · ${file.name}`;
+        $('evaluation-results').hidden = false;
+        $('evaluation-message').textContent = 'Read-only evaluation completed.';
+        log(`[SYS] Evaluated final model v${result.model_version} on ${result.sample_count} held-out samples.`, 'success');
+      } catch (err) {
+        $('evaluation-message').textContent = `Evaluation failed: ${err.message}`;
+        log(`[SYS] Evaluation failed: ${err.message}`, 'error');
+      } finally {
+        evaluationBusy = false;
+        $('evaluate').disabled = !evaluationEnabled || !$('evaluation-csv').files.length;
       }
     }
 
@@ -685,6 +818,12 @@
       $('header-mode').textContent = 'Command Center';
       $('coordinator-view').hidden = false;
       $('start').addEventListener('click', start);
+      $('evaluate').addEventListener('click', evaluateFinal);
+      $('evaluation-csv').addEventListener('change', () => {
+        $('evaluation-results').hidden = true;
+        evaluationVersion = null;
+        $('evaluate').disabled = !evaluationEnabled || !$('evaluation-csv').files.length || evaluationBusy;
+      });
       coordinatorRefresh();
       setInterval(coordinatorRefresh, 1000);
     } else {
