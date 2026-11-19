@@ -534,7 +534,3 @@ The current APIs and GUIs do not implement authentication; use localhost port-fo
 - [Kubernetes StatefulSets](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/) — stable client identities.
 - [GUI Kubernetes integration](docs/GUI_KUBERNETES_INTEGRATION.md) — deployment details.
 - [Coordinator and client GUI guide](visualization/README.md) — local development alternative.
-
----
-
-**TrustFed — collaborative learning with trust-aware model aggregation.**
